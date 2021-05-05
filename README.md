@@ -1,5 +1,5 @@
 # Nature Protocols EHR framework
-This codebase is intended to accompany the Nature Protocols paper titled: Developing Continuous Risk Models for Adverse Event Prediction in Electronic Health Records using Deep Learning.
+This codebase is intended to accompany the Nature Protocols paper titled: Use of deep learning to develop continuous-risk models for adverse event prediction from electronic health records.
 
 This codebase illustrates the core components of the continuous prediction model including configurable predictions tasks, interval masking and auxiliary heads. We hope that this will be a useful resource that can be customised by other EHR research labs; however it is not intended as an end-to-end runnable pipeline. Although the full data pre-processing pipeline is not included here as it is highly specific to the patient dataset; we do include synthetic examples of the pre-processing stages with an accompanying data-reading notebook. The codebase also excludes some elements of model evaluation and subgroup analysis; however these are described in the protocol text.
 
