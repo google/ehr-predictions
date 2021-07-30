@@ -1,0 +1,27 @@
+// Protocol buffer definitions to encode records in the fake dataset.
+syntax = "proto2";
+
+package ehr_prediction_modeling.proto;
+
+
+// Defines an individual event in the fake dataset.
+message FakeRecord {
+  optional string record_number = 1;
+
+  optional string feature_category_idx = 2;
+
+  optional string feature_idx = 3;
+
+  // Number of seconds since patient's birth.
+  optional string patient_age = 4;
+
+  optional string feature_value = 5;
+
+  // Discrete time of day. Absence of value is a valid state, implying absence
+  // of data.
+  optional string time_of_day = 6;
+}
+
+message FakeRecords {
+  repeated FakeRecord records = 1;
+}

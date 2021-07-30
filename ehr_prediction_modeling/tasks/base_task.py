@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -302,6 +302,7 @@ class Task(metaclass=abc.ABCMeta):
   @abc.abstractmethod
   def config(cls) -> configdict.ConfigDict:
     """Config creation for the task."""
+
   # pytype: enable=bad-return-type
 
   # pytype: disable=bad-return-type
@@ -309,4 +310,5 @@ class Task(metaclass=abc.ABCMeta):
   @abc.abstractmethod
   def default_configs(cls) -> List[configdict.ConfigDict]:
     """Default task config."""
+
   # pytype: enable=bad-return-type

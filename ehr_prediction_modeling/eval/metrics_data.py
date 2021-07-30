@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,10 +65,10 @@ class BinaryMetricsData(MetricsData):
 
   def __init__(
       self,
-      positive_predictions: List[float] = None,
-      negative_predictions: List[float] = None,
-      positive_weights: List[float] = None,
-      negative_weights: List[float] = None):
+      positive_predictions: Optional[List[float]] = None,
+      negative_predictions: Optional[List[float]] = None,
+      positive_weights: Optional[List[float]] = None,
+      negative_weights: Optional[List[float]] = None):
     self.positive_predictions = positive_predictions or []
     self.negative_predictions = negative_predictions or []
     self.positive_weights = positive_weights or []
@@ -138,9 +138,9 @@ class RegressionMetricsData(MetricsData):
 
   def __init__(
       self,
-      predictions: List[float] = None,
-      targets: List[float] = None,
-      weights: List[float] = None) -> None:
+      predictions: Optional[List[float]] = None,
+      targets: Optional[List[float]] = None,
+      weights: Optional[List[float]] = None) -> None:
     self.predictions = predictions or []
     self.targets = targets or []
     self.weights = weights or []

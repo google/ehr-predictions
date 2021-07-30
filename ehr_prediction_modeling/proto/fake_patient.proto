@@ -1,0 +1,90 @@
+// Protocol buffer definitions to encode patients in the fake dataset.
+syntax = "proto2";
+
+package ehr_prediction_modeling.proto;
+
+
+message FakeClinicalEventEntry {
+  optional string feature_category_idx = 1;
+
+  optional string feature_idx = 2;
+
+  optional string feature_value = 3;
+}
+
+// Defines a single event or a set of coinciding individual events that happen
+// at the same time.
+message FakeClinicalEvent {
+  // Days since birth at the time of the events (plus random noise).
+  optional string patient_age = 1;
+
+  // Time of day (granularity of the measurement pending clarification). Absence
+  // of value is a valid state, implying absence of data.
+  optional string time_of_day = 2;
+
+  // A list of clinical entries recorded during the specified interval.
+  repeated FakeClinicalEventEntry entries = 3;
+
+  map<string, int64> labels = 5;
+
+  map<string, float> numerical_labels = 6;
+}
+
+// Defines the sequence of events that follow the initial admission
+message FakeAdmission {
+  // A sequence of clinical events during the admission.
+  repeated FakeClinicalEvent clinical_events = 1;
+
+  // The duration of the admission in days
+  optional float duration = 3;
+}
+
+// Defines a sequence of outpatient events between inpatient admissions.
+message FakeOutpatientEvents {
+  repeated FakeClinicalEvent clinical_events = 1;
+}
+
+// An abstraction of an event sequence that can be either an admission or an
+// outpatient sequence.
+message FakeEpisode {
+  oneof episode_type {
+    FakeAdmission admission = 1;
+    FakeOutpatientEvents outpatient_events = 2;
+  }
+  optional string episode_id = 3;
+}
+
+// Defines all the data provided for a single patient.
+message FakePatient {
+  // Record number, unique for each patient nationally, unrelated to any
+  // existing record or patient ID.
+  optional string record_number = 1;
+
+  optional FakeMetadata1.Enum metadata_1 = 2;
+
+  optional FakeMetadata2.Enum metadata_2 = 3;
+
+  // A sequence of admissions corresponding to a single patient.
+  repeated FakeEpisode episodes = 4;
+}
+
+message FakeMetadata1 {
+  enum Enum {
+    VALUE_1 = 0;
+    VALUE_2 = 1;
+    VALUE_3 = 2;
+  }
+}
+
+message FakeMetadata2 {
+  enum Enum {
+    VALUE_1 = 0;
+    VALUE_2 = 1;
+    VALUE_3 = 2;
+    VALUE_4 = 3;
+  }
+}
+
+message FakePatients {
+  repeated FakePatient patients = 1;
+}

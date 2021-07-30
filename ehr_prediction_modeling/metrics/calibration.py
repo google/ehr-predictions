@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 
 # Lint as: python3
 """Implements methods for measuring and resolving model calibration."""
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 import numpy as np
 
 
@@ -39,7 +39,7 @@ def reliability_histogram(
     labels: ListOrArray,
     confidence_scores: ListOrArray,
     num_bins: int = DEFAULT_NUM_BINS,
-    example_weights: ListOrArray = None
+    example_weights: Optional[ListOrArray] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
   """Computes a histogram of confidence vs accuracy for the specified # of bins.
 
@@ -100,7 +100,7 @@ def risk_reliability_histogram(
     labels: ListOrArray,
     risk_scores: ListOrArray,
     num_bins=DEFAULT_NUM_BINS,
-    example_weights: ListOrArray = None
+    example_weights: Optional[ListOrArray] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
   """Computes a histogram of risk vs positive rate for the specified # of bins.
 

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ def loss_fn(y: tf.Tensor,
 
 def scale_pos_fn(targets: tf.Tensor,
                  loss_mask: tf.Tensor,
-                 scale_pos_weight: float = None) -> tf.Tensor:
+                 scale_pos_weight: Optional[float] = None) -> tf.Tensor:
   """Re-weight positive examples by scale_pos_weight."""
   if scale_pos_weight is None:
     return loss_mask

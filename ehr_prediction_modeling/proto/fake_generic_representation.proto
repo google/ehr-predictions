@@ -1,0 +1,52 @@
+syntax = "proto2";
+
+package ehr_prediction_modeling.proto;
+
+
+message FakeGenericFeatureVector {
+  map<int64, float> features = 1;
+}
+
+message FakeGenericEvent {
+  optional int64 time = 1;
+  // Sometimes features are present without a value. So we keep track of that in
+  // two separate vectors. These vectors/representations may be of different
+  // dimensionality so that presence_vector[index] is not the same as the
+  // feature_vector[index]. The reason is that the numerical feature vector may
+  // contain consolidated versions of features as well as features for only a
+  // subset of categories where the numerical information is present.
+  optional FakeGenericFeatureVector presence_vector = 2;
+  optional FakeGenericFeatureVector numerical_feature_vector = 3;
+  optional bool ignore = 5;
+  map<string, int64> labels = 6;
+  // Histogram of category occurrences for the features that are present in the
+  // event.
+  optional FakeGenericFeatureVector category_counts_vector = 7;
+  map<string, float> numerical_labels = 8;
+  optional string episode_id = 10;
+}
+
+message FakeGenericEventSequence {
+  // Assuming that the events are ordered within the sequence.
+  optional string record_number = 1;
+  repeated FakeGenericEvent events = 3;
+  map<string, int64> sequence_labels = 6;
+  map<string, float> numerical_sequence_labels = 8;
+}
+
+message FakeGenericEventSequences {
+  repeated FakeGenericEventSequence generic_event_sequences = 1;
+}
+
+message FakeGenericFeatureType {
+  enum Type {
+    UNDEFINED = 0;
+    PRESENCE = 1;
+    NUMERICAL = 2;
+    CATEGORY_COUNTS = 3;
+  }
+  enum Time {
+    UNKNOWN = 0;
+    SEQUENTIAL = 1;
+  }
+}

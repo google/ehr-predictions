@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 
 # Lint as: python3
 """PR and ROC curves and calculations."""
-from typing import List, Union
+from typing import List, Optional, Union
 import numpy as np
 
 ListOrArray = Union[List[Union[float, int]], np.ndarray]
@@ -101,8 +101,8 @@ def weighted_pr_area_under_curve_from_raw_scores(
 def roc_curve_from_raw_scores(
     scores_pos: ListOrArray,
     scores_neg: ListOrArray,
-    weights_pos: ListOrArray = None,
-    weights_neg: ListOrArray = None) -> CurvePoints:
+    weights_pos: Optional[ListOrArray] = None,
+    weights_neg: Optional[ListOrArray] = None) -> CurvePoints:
   """Computes the ROC curve from the sequences of positive and negative scores.
 
   This is based on the 'Algorithm 1' described in 'An introduction to ROC
@@ -168,8 +168,8 @@ def roc_curve_from_raw_scores(
 def pr_curve_from_raw_scores(
     scores_pos: ListOrArray,
     scores_neg: ListOrArray,
-    weights_pos: ListOrArray = None,
-    weights_neg: ListOrArray = None) -> CurvePoints:
+    weights_pos: Optional[ListOrArray] = None,
+    weights_neg: Optional[ListOrArray] = None) -> CurvePoints:
   """Computes the PR curve from the sequences of positive and negative scores.
 
   This is based on the 'Algorithm 1' described in 'An introduction to ROC

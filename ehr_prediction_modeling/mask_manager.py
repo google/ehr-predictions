@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,8 +81,8 @@ class MaskManager:
       Tensor in time-major shape wnct
       [num_unroll, batch_size, channels, num_targets] with the mask value.
     """
-    if (component_mask_name not in
-        self._all_supported_masks[composite_mask_name]):
+    if (component_mask_name
+        not in self._all_supported_masks[composite_mask_name]):
       raise ValueError(
           f"Component {component_mask_name} is not part of composite "
           f"{composite_mask_name}, its components are "
@@ -204,8 +204,8 @@ class MaskManager:
       raise ValueError("Around admission masks require a non-empty list of "
                        "times that indicate how many hours after the admission"
                        " the mask will be nonzero.")
-    time_mask = self._around_admission_mask(
-        batch, self._hours_after_admission[0])
+    time_mask = self._around_admission_mask(batch,
+                                            self._hours_after_admission[0])
     for time in self._hours_after_admission[1:]:
       time_mask += self._around_admission_mask(batch, time)
     return time_mask

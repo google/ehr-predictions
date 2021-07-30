@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2020 Google Health Research.
+# Copyright 2021 Google Health Research.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -195,7 +195,10 @@ def rnn_step_with_state(
 class RNNModelWithPersistentState():
   """RNN with self contained persistent state, should only be called once."""
 
-  def __init__(self, model, modify_state: bool = True, batch_size: int = None):
+  def __init__(self,
+               model,
+               modify_state: bool = True,
+               batch_size: Optional[int] = None):
     self._model = model
     self._modify_state = modify_state
     self._batch_size = batch_size or self._model.batch_size
