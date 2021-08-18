@@ -47,6 +47,9 @@ class InputEmbeddingBase(metaclass=abc.ABCMeta):
     # Regularization depends on this
     self._name = self._config.embedding_type
     self._embed_dim_dict = emb_dim_dict
+    # Boolean, whether in training mode to apply dropout / batch normalization.
+    self._is_training = types.ModelMode.is_train(
+        self._config.get("mode", types.ModelMode.TRAIN))
     self._all_features = self._config.context_features + self._config.sequential_features
     self.has_embedding_loss = has_embedding_loss
     self._encoders = {}
@@ -97,9 +100,12 @@ class InputEmbeddingBase(metaclass=abc.ABCMeta):
       Dict of feature_types to embeddings.
     """
     embeddings = collections.OrderedDict()
+    context = {"is_training": self._is_training}
 
     for feat_type in feature_types:
       input_data = (data[f"idx_{feat_type}"], data[f"val_{feat_type}"])
 
-      embeddings[feat_type] = self._embed_feature(feat_type, input_data)
+      embeddings[feat_type] = self._embed_feature(feat_type, input_data,
+                                                  context)
+
     return embeddings

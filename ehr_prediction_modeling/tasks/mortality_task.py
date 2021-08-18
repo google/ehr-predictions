@@ -46,8 +46,8 @@ class MortalityRisk(base_task.Task):
     return {
         **super()._supported_train_masks,
         **{
-            task_masks.Train.AROUND_ADM:
-                self.default_masks + [mask_utils.AROUND_ADMISSION_TRAIN_MASK],
+            task_masks.Train.SINCE_EVENT:
+                self.default_masks + [mask_utils.SINCE_EVENT_TRAIN_MASK],
         }
     }
 
@@ -57,8 +57,8 @@ class MortalityRisk(base_task.Task):
     return {
         task_masks.Eval.BASE:
             self.default_masks,
-        task_masks.Eval.AROUND_ADM:
-            self.default_masks + [mask_utils.AROUND_ADMISSION_EVAL_MASK],
+        task_masks.Eval.SINCE_EVENT:
+            self.default_masks + [mask_utils.SINCE_EVENT_EVAL_MASK],
     }
 
   def __init__(self, config: configdict.ConfigDict):
@@ -106,7 +106,7 @@ class MortalityRisk(base_task.Task):
     """
     context_d, sequence_d = mask_utils.get_labels_for_masks(
         self._config.train_mask, self._config.eval_masks,
-        self._all_supported_masks)
+        self._all_supported_masks, self._config.time_since_event_label_key)
 
     sequence_d[label_utils.IGNORE_LABEL] = tf.FixedLenSequenceFeature([1],
                                                                       tf.int64)
@@ -160,15 +160,18 @@ class MortalityRisk(base_task.Task):
       window_days: List[int],
       eval_masks: List[str],
       train_mask: str,
+      time_buckets_per_day: int,
       mortality_during_admission: bool = False,
-      hours_after_admission: Optional[List[int]] = None,
+      time_since_event_hours_list: Optional[List[int]] = None,
       accumulate_logits: bool = True,
       loss_weight: float = 1.0,
       scale_pos_weight: Optional[float] = 1.,
+      task_layer_type: str = types.TaskLayerTypes.MLP,
       task_layer_sizes: Optional[List[int]] = None,
       regularization_type: str = types.RegularizationType.NONE,
       regularization_weight: float = 0.,
       name: str = types.TaskNames.MORTALITY,
+      snr_config: Optional[configdict.ConfigDict] = None,
   ) -> configdict.ConfigDict:
     """Generates a config object for MortalityRisk.
 
@@ -180,21 +183,24 @@ class MortalityRisk(base_task.Task):
         should be in MortalityRisk._supported_eval_masks.
       train_mask: str, name of the mask used for training. One of
         MortalityRisk._supported_train_masks.
+      time_buckets_per_day: Number of time buckets within a day. It is only
+        needed for time since event masks.
       mortality_during_admission: boolean indicating if the model should predict
         mortality during the remainder of a patient's in-hospital stay.
-      hours_after_admission: if the around admission mask is present in either
+      time_since_event_hours_list: if the since event mask is present in either
         train or eval, this is a list specifying the number of hours after
-        admission at which the model predicts mortality e.g. [24, 48] would
-        predict mortality at 24 and 48 hours after admission. If masking during
+        event at which the model predicts mortality e.g. [24, 48] would
+        predict mortality at 24 and 48 hours after event. If masking during
         training, these are combined i.e. the loss is comprised of the
-        prediction at 24 and  48 hours after admission. If masking during eval,
+        prediction at 24 and  48 hours after event. If masking during eval,
         these are returned as separate masks to get metrics for predicting
-        mortality at 24 hours after admission, and separately for predicting
-        mortality at 48 hours after admission.
+        mortality at 24 hours after event, and separately for predicting
+        mortality at 48 hours after event.
       accumulate_logits: bool, whether to create a CDF over the logits of
         increasing time_windows to encourage monotonicity.
       loss_weight: float, weight of this task loss.
       scale_pos_weight: float, weight of positive samples in the loss.
+      task_layer_type: one of types.TaskLayerTypes - the type of layer to use.
       task_layer_sizes: array of int, the size of the task-specific layers to
         pass the model output through before a final logistic layer. If None,
         there is just the final logistic layer.
@@ -203,6 +209,8 @@ class MortalityRisk(base_task.Task):
       regularization_weight: float, the weight of the regularization penalty to
         apply to logistic layers associated with this task.
       name: str, name of this task for visualization and debugging.
+      snr_config: configdict.ConfigDict, containing task layer sub-network
+        routing parameters.
 
     Returns:
       A ConfigDict to be used to instantiate a Mortality task.
@@ -211,7 +219,10 @@ class MortalityRisk(base_task.Task):
     config.task_type = MortalityRisk.task_type
     config.name = name
     config.window_days = sorted(window_days)
-    config.hours_after_admission = hours_after_admission or []
+    config.time_since_event_hours_list = time_since_event_hours_list or []
+    # Since event label key used is time since admission.
+    config.time_since_event_label_key = label_utils.TSA_LABEL
+    config.time_buckets_per_day = time_buckets_per_day
     config.eval_masks = eval_masks
     config.train_mask = train_mask
     config.mortality_during_admission = mortality_during_admission
@@ -230,9 +241,10 @@ class MortalityRisk(base_task.Task):
         MortalityRisk.config(
             window_days=[1, 7, 30],
             train_mask=task_masks.Train.BASE,
+            time_buckets_per_day=24,
             eval_masks=[task_masks.Eval.BASE],
             mortality_during_admission=False,
-            hours_after_admission=None,
+            time_since_event_hours_list=None,
             scale_pos_weight=1.0,
             loss_weight=1.0,)
     ]

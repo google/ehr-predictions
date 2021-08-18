@@ -59,9 +59,9 @@ class AdverseOutcomeRisk(base_task.Task):
     return {
         **super()._supported_train_masks,
         **{
-            task_masks.Train.AROUND_ADM:
+            task_masks.Train.SINCE_EVENT:
                 self.default_masks + [
-                    mask_utils.AROUND_ADMISSION_TRAIN_MASK
+                    mask_utils.SINCE_EVENT_TRAIN_MASK
                 ],
             "no_censored_patients": [
                 mask_utils.PATIENT_MASK, mask_utils.IGNORE_MASK
@@ -79,9 +79,9 @@ class AdverseOutcomeRisk(base_task.Task):
             mask_utils.PATIENT_MASK,
             mask_utils.IGNORE_MASK,
         ],
-        task_masks.Eval.AROUND_ADM:
+        task_masks.Eval.SINCE_EVENT:
             self.default_masks + [
-                mask_utils.AROUND_ADMISSION_EVAL_MASK,
+                mask_utils.SINCE_EVENT_EVAL_MASK,
             ],
     }
 
@@ -130,7 +130,7 @@ class AdverseOutcomeRisk(base_task.Task):
     """
     context_d, sequence_d = mask_utils.get_labels_for_masks(
         self._config.train_mask, self._config.eval_masks,
-        self._all_supported_masks)
+        self._all_supported_masks, self._config.time_since_event_label_key)
 
     for label_key in self._label_keys:
       sequence_d[label_key] = tf.FixedLenSequenceFeature([1], tf.int64)
@@ -283,14 +283,16 @@ class AdverseOutcomeRisk(base_task.Task):
       eval_masks: List[str],
       train_mask: str,
       adverse_outcome_during_remaining_stay: bool = False,
-      hours_after_admission: Optional[List[int]] = None,
+      time_since_event_hours_list: Optional[List[int]] = None,
       loss_weight: float = 1.0,
       accumulate_logits: bool = True,
       scale_pos_weight: Optional[float] = 1.,
+      task_layer_type: str = types.TaskLayerTypes.MLP,
       task_layer_sizes: Optional[List[int]] = None,
       regularization_type: str = types.RegularizationType.NONE,
       regularization_weight: float = 0.,
       name: str = types.TaskNames.ADVERSE_OUTCOME_RISK,
+      snr_config: Optional[configdict.ConfigDict] = None,
   ) -> configdict.ConfigDict:
     """Generates a config object for AKIRisk.
 
@@ -305,17 +307,18 @@ class AdverseOutcomeRisk(base_task.Task):
       adverse_outcome_during_remaining_stay: boolean indicating if the model
         should predict adverse outcome during the remainder of a patients in
         hospital stay.
-      hours_after_admission: If the around admission mask is used, this list
-        specifies the number of hours after admission at which the model
+      time_since_event_hours_list: If the since event mask is used, this list
+        specifies the number of hours after event at which the model
         predicts Adverse Outcome during remaining stay e.g. [0, 6] would predict
-        Adverse Outcome at admission and 6 hours after admission. If masking
+        Adverse Outcome at event and 6 hours after event. If masking
         during eval, these are returned as separate masks to get metrics for
-        predicting Adverse Outcome at admission and Adverse Outcome at 6 hours
-        after admission.
+        predicting Adverse Outcome at event and Adverse Outcome at 6 hours
+        after event.
       loss_weight: float, weight of this task loss.
       accumulate_logits: bool, whether to create a CDF over logits predict
         windows to encourage monotinicity.
       scale_pos_weight: float, weight of positive samples in the loss.
+      task_layer_type: one of types.TaskLayerTypes - the type of layer to use.
       task_layer_sizes: array of int, the size of the task-specific layers to
         pass the model output through before a final logistic layer. If None,
         there is just the final logistic layer.
@@ -324,6 +327,8 @@ class AdverseOutcomeRisk(base_task.Task):
       regularization_weight: float, the weight of the regularization penalty to
         apply to logistic layers associated with this task.
       name: str, name of this task for visualization and debugging.
+      snr_config: configdict.ConfigDict, containing task layer sub-network
+        routing parameters.
 
     Returns:
       A ConfigDict to be used to instantiate a AdverseOutcomeRisk task.
@@ -336,7 +341,9 @@ class AdverseOutcomeRisk(base_task.Task):
     config.eval_masks = eval_masks
     config.train_mask = train_mask
     config.adverse_outcome_during_remaining_stay = adverse_outcome_during_remaining_stay
-    config.hours_after_admission = hours_after_admission or []
+    config.time_since_event_hours_list = time_since_event_hours_list or []
+    # Since event label key used is time since admission.
+    config.time_since_event_label_key = label_utils.TSA_LABEL
     config.loss_weight = loss_weight
     config.accumulate_logits = accumulate_logits
     config.scale_pos_weight = scale_pos_weight

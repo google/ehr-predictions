@@ -77,6 +77,9 @@ class Coordinator():
   def task_eval_masks_list(self) -> List[List[str]]:
     return [task.eval_masks for task in self._task_list]
 
+  @property
+  def task_layers(self) -> Mapping[str, Any]:
+    return self._task_layers
 
   def get_task_layers_variables(self) -> Sequence[tf.Variable]:
     return sum([
@@ -135,9 +138,24 @@ class Coordinator():
       task_variables = task.get_task_variables(batch, model_output)
       task_loss = task_variables.loss
       eval_loss = sum(task_variables.eval_losses.values())
-      task_loss_weight = task.loss_weight
-      weighted_task_loss = task_loss * task_loss_weight
-      weighted_task_eval_loss = eval_loss * task_loss_weight
+      loss_combo_type = self._optimizer_config.get(
+          "task_loss_combination_type", types.LossCombinationType.SUM_ALL)
+      if loss_combo_type == types.LossCombinationType.SUM_ALL:
+        task_loss_weight = task.loss_weight
+        weighted_task_loss = task_loss * task_loss_weight
+        weighted_task_eval_loss = eval_loss * task_loss_weight
+      elif loss_combo_type == types.LossCombinationType.UNCERTAINTY_WEIGHTED:
+        # Compute uncertainty based multi-task loss weight based on
+        # https://arxiv.org/abs/1705.07115.
+        weighted_task_loss, weighted_task_eval_loss, task_loss_weight = (
+            loss_utils.compute_uncertainty_multi_task_loss(
+                task_loss, eval_loss, task.task_type,
+                self._optimizer_config.sigma_min,
+                self._optimizer_config.sigma_max,
+                self._optimizer_config.max_loss_weight))
+      else:
+        raise ValueError("Unknown loss combination type. Choose one of"
+                         "types.LossCombinationType.")
       task_variables_list.append(task_variables)
       task_losses.append(weighted_task_loss)
       task_eval_losses.append(weighted_task_eval_loss)

@@ -55,6 +55,8 @@ class SparseLookupEncoder(snt.AbstractModule):
                n_act: Optional[int] = None,
                activate_final: bool = False,
                act_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
+               sparse_lookup_dropout_prob: float = 0.,
+               dropout_is_training: bool = True,
                sparse_combine: str = "sum",
                name: Optional[str] = None,
                identity_lookup: bool = False):
@@ -68,6 +70,8 @@ class SparseLookupEncoder(snt.AbstractModule):
     self._n_act = 0 if not n_act else n_act
     self._act_fn = act_fn
     self._activate_final = activate_final
+    self._dropout_prob = sparse_lookup_dropout_prob
+    self._dropout_is_training = dropout_is_training
 
     # Apply a correction by diving by the square root or mean of the number of
     # observed entries to control variance scaling the number of obs entries.
@@ -98,6 +102,13 @@ class SparseLookupEncoder(snt.AbstractModule):
       with self._enter_variable_scope():
         self._w = tf.get_variable(
             "init_embed", shape=weight_shape, initializer=initializer)
+      # Add dropout
+      if self._dropout_prob > 0.:
+        self._w = slim.dropout(
+            self._w,
+            keep_prob=(1 - self._dropout_prob),
+            noise_shape=[self._ndim_input, 1],
+            is_training=self._dropout_is_training)
 
   def _build(
       self,

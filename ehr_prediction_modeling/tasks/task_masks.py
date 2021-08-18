@@ -19,9 +19,9 @@
 
 class Train():
   BASE = "base_train"
-  AROUND_ADM = "around_adm_train"
+  SINCE_EVENT = "since_event_train"
 
 
 class Eval():
   BASE = "base_eval"
-  AROUND_ADM = "around_adm_eval"
+  SINCE_EVENT = "since_event_eval"

@@ -22,6 +22,7 @@ from absl import logging
 from ehr_prediction_modeling import config as experiment_config
 from ehr_prediction_modeling import embeddings
 from ehr_prediction_modeling import encoder_module_base
+from ehr_prediction_modeling import losses
 from ehr_prediction_modeling import types
 from ehr_prediction_modeling.data import tf_dataset
 from ehr_prediction_modeling.eval import metrics_coordinator as metrics
@@ -150,16 +151,28 @@ def run(config):
   forward_return = model(features, batch.is_beginning_sequence, time_vect)
   tasks_graph = task_coordinator.get_coordinator_variables(
       batch, forward_return.model_output)
+  embedding_loss, _ = encoder.get_embedding_loss(batch)
 
   loss = tasks_graph.combined_loss
   loss += encoder.get_embedding_regularization_loss()
+  loss += embedding_loss
   loss += model.get_model_regularization_loss()
 
-  step = model_utils.optim_fn(
-      optimizer,
-      loss,
-      tf.trainable_variables(),
-      norm_clip=config.optimizer.norm_clip)
+  losses_per_task = {}
+  for task_name, task_vars in zip(task_coordinator.task_names,
+                                  tasks_graph.task_variables_list):
+    losses_per_task[task_name] = task_vars.loss
+
+  loss += task_coordinator.get_task_regularization_losses()
+
+  loss_to_vars = losses.get_loss_to_variables_dict(
+      model=model,
+      encoder=encoder,
+      losses_per_task=losses_per_task,
+      all_variables=tf.trainable_variables(),
+      total_loss=loss)
+  step = model_utils.multiple_loss_optim_fn(
+      optimizer, loss_to_vars, norm_clip=config.optimizer.norm_clip)
 
   split = config.splits_to_evaluate
   eval_batch_gen, eval_task_vars = setup_eval(config, task_coordinator, split,

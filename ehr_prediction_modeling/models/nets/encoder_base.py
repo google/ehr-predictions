@@ -60,6 +60,11 @@ class DeepEncoderBase(snt.AbstractModule):
     self._emb_config = emb_config
     self._enc_config = enc_config
     self._n_act = n_act
+    self._dropout_prob = self._enc_config.get("embedding_dropout_prob", 0.)
+    self._dropout_is_training = types.ModelMode.is_train(
+        self._enc_config.get("mode", types.ModelMode.TRAIN))
+    self._use_batch_norm = self._emb_config.get("arch_args.use_batch_norm",
+                                                False)
     self._act_fn = act_fn
     self._sparse_combine = self._enc_config.get("sparse_combine", "sum")
     self._n_encoder_hidden = n_encoder_hidden
@@ -75,6 +80,9 @@ class DeepEncoderBase(snt.AbstractModule):
         self._n_act,
         activate_final=False,
         act_fn=self._act_fn,
+        sparse_lookup_dropout_prob=self._enc_config.get(
+            "sparse_lookup_dropout_prob", 0.0),
+        dropout_is_training=self._dropout_is_training,
         sparse_combine=self._sparse_combine,
         identity_lookup=identity_lookup)
 

@@ -1,5 +1,8 @@
-# Nature Protocols EHR framework
-This codebase is intended to accompany the Nature Protocols paper titled: Use of deep learning to develop continuous-risk models for adverse event prediction from electronic health records.
+# EHR modeling framework
+This codebase is intended to accompany the following two papers:
+1. Nature Protocols paper titled: Use of deep learning to develop continuous-risk models for adverse event prediction from electronic health records
+2. Multitask prediction of organ dysfunction in the intensive care unit using
+   sequential subnetwork routing
 
 This codebase illustrates the core components of the continuous prediction model including configurable predictions tasks, interval masking and auxiliary heads. We hope that this will be a useful resource that can be customised by other EHR research labs; however it is not intended as an end-to-end runnable pipeline. Although the full data pre-processing pipeline is not included here as it is highly specific to the patient dataset; we do include synthetic examples of the pre-processing stages with an accompanying data-reading notebook. The codebase also excludes some elements of model evaluation and subgroup analysis; however these are described in the protocol text.
 
@@ -34,7 +37,7 @@ code in this repository was tested with `conda 4.9.1`.
 * `encoder_module_base.py` defines the encoder, a module which passes each of the different feature types through an embedding module and combines the embeddings to get ready for input to a model.
 * `experiment.py` is the script to be run to train a model. This version of the code base does not support prediction or evaluation modes yet.
 * `mask_manager.py` defines all the masking logic that is used to exclude timesteps from training or evaluation.
-* `models/`defines recurrent architectures as subclasses of `sonnet.AbstractModule`. `SequenceModel` is the abstract class from which `BaseRNNModel` inherits, from which `RNNModel` inherits. These classes define the recurrent computational subgraph in Tensorflow. In particular, stacks of RNN layers with highway connections, embedding losses, and hidden state initialization. `ResetCore` is a wrapper around [`sonnet.RNNCore`](https://sonnet.readthedocs.io/en/latest/api.html?highlight=RNNCore#sonnet.RNNCore) that allows resetting the hidden state when a binary flag indicates that a new sequence is starting. `cell_factory.py` allows instantiating the RNN cell based on the value of the config parameter `config.cell_type`. For the time being, only 3 cell types are available.
+* `models/`defines recurrent architectures as subclasses of `sonnet.AbstractModule`. `SequenceModel` is the abstract class from which `BaseRNNModel` inherits, from which `RNNModel` inherits. These classes define the recurrent computational subgraph in Tensorflow. In particular, stacks of RNN layers with highway connections, embedding losses, and hidden state initialization. `ResetCore` is a wrapper around [`sonnet.RNNCore`](https://sonnet.readthedocs.io/en/latest/api.html?highlight=RNNCore#sonnet.RNNCore) that allows resetting the hidden state when a binary flag indicates that a new sequence is starting. `cell_factory.py` allows instantiating the RNN cell based on the value of the config parameter `config.cell_type`. For the time being, only 3 cell types are available. The `SNRNNModel` is the modularized version of the stacked RNN which is used for sub-network routing predictions together with the `SNREncoder` and `SNRTaskLayer`. SNRConnection wrappers as defined in `snr.py` are used throughout for combining the output of a specific part with the learnable routing variables, and then fed as input downstream.
 * `tasks/` defines five tasks : mortality, adverse outcome, length of stay, lab values, and readmission. A task is defined by a set of labels and masks. It is in charge of computing the final predictions from the output of the RNN and the loss. When a model is trained to optimize several tasks, the `Coordinator` helps with combining the various training objectives.
 * `types.py` defines most constants that are used throughout the code base.
 * `utils/` defines various helpers: activation functions, functions to manipulate batches of data, label names, loss functions, and mask names.
@@ -160,7 +163,11 @@ Boolean masks are used to exclude specific time steps from training or evaluatio
 ## Modelling
 See step 19 of the protocol.
 
+### Stacked RNN Model
 The model consists of an Multilayer Perceptron (MLP) that projects sparse inputs at all time steps to a lower dimensional dense space (step 18 of the protocol). The time series formed by these projections is then fed to a deep RNN with highway connections that predicts one or more targets, for one or more tasks. The combined training objective is a weighted sum of the individual tasks’ training objectives. They are combined by the task Coordinator. For binary classification tasks, the cross entropy loss is a proxy for the negative loglikelihood, while the L2 loss is a proxy for the Brier score. Regression tasks can use L1 or L2 losses. See `utils/loss_utils.py`. Weights are updated via stochastic gradient descent for a given number of steps.
+
+### SNRNN
+Similar to the Stacked RNN Model, SNRNN is a deep RNN that predicts one or more targets, for one or more tasks. The difference is that each layer is split up into multiple cells, whose outputs are connected to the following layer through routing connections. More information and exact diagrams of the setup can be found [here](https://academic.oup.com/jamia/advance-article/doi/10.1093/jamia/ocab101/6307184).
 
 ## Data reading
 Data is read in [`tf.train.SequenceExample`](https://www.tensorflow.org/versions/r1.15/api_docs/python/tf/train/SequenceExample) format using the [`tf.data.Dataset` API](https://www.tensorflow.org/tutorials/load_data/tfrecord). Since time series have different lengths, they are padded so that they can be batched together. All batches are in time-major format (i.e. their dimension is `[num_unroll, batch_size, num_features]`). Padded time steps are discarded in the training loss using a boolean mask. A binary flag indicates when the hidden state of the RNN should be reset (when a new patient’s history starts).

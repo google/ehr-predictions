@@ -134,6 +134,9 @@ def get_model_config(shared):
 
   model_config = configdict.ConfigDict()
 
+  # One of types.ModelModes
+  model_config.mode = shared["mode"]
+
   # Number of training steps.
   model_config.num_steps = 400000
 
@@ -179,6 +182,8 @@ def get_model_config(shared):
   model_config.parallel_iterations = 1
 
   model_config.cell_config = get_cell_config()
+
+  model_config.snr = get_model_snr_config()
 
   return model_config
 
@@ -256,8 +261,22 @@ def get_encoder_config(shared):
   # The batch size.
   encoder_config.batch_size = shared.batch_size
 
+  # How to combine embeddings. One of types.EmbeddingCombinationMethod
+  encoder_config.embedding_combination_method = (
+      types.EmbeddingCombinationMethod.CONCATENATE)
+
   # Embedding type enum as per types.EmbeddingType.
   encoder_config.embedding_type = types.EmbeddingType.DEEP_EMBEDDING
+
+  # Probability of performing embedding dropout. Will not be applied to sparse
+  # lookup layers. If types.EmbeddingType.LOOKUP is used, this value will be
+  # ignored.
+  encoder_config.embedding_dropout_prob = 0.0
+
+  # Probability of performing embedding dropout on the sparse lookup layer.
+  # If types.EmbeddingType.LOOKUP is used, this is the only dropout_prob that
+  # will be used, embedding_dropout_prob will be ignored.
+  encoder_config.sparse_lookup_dropout_prob = 0.0
 
   # Coefficient for leaky relu activation functions.
   encoder_config.leaky_relu_coeff = 0.2
@@ -282,6 +301,9 @@ def get_encoder_config(shared):
 
   # The config for deep embeddings.
   encoder_config.deep = deep_embedding_config(shared)
+
+  # One of types.ModelModes
+  encoder_config.mode = shared["mode"]
 
   return encoder_config
 
@@ -319,6 +341,9 @@ def shared_config():
   # The batch size.
   shared.batch_size = 128
 
+  # The mode: one of types.ModelMode
+  shared.mode = [types.ModelMode.TRAIN]
+
   # Each event sequence will chopped into segments of this number of steps.
   # This should be a multiple of num_unroll and is only used in "fast" training
   # mode with pad_sequences=True. RNN states will not be propagated across
@@ -354,9 +379,83 @@ def deep_embedding_config(shared):
 
   config.arch_args = configdict.ConfigDict()
   config.arch_args.use_highway_connection = True
+  config.arch_args.use_batch_norm = False
   config.arch_args.activate_final = False
 
   config.tasks = shared.tasks
+
+  # Set configs for SNREncoder
+  config.snr = snr_config()
+
+  return config
+
+
+def get_model_snr_config():
+  """SNR related parameters used in the model."""
+  config = configdict.ConfigDict()
+
+  # Set parameters for the hard sigmoid
+  config.zeta = 3.0
+  config.gamma = -1.0
+  config.beta = 1.0
+
+  # Set the regularization weight for SNRConnections.
+  config.subnetwork_conn_l_reg_factor_weight = 0.0001
+
+  # When set to true it will pass all RNN cell outputs to the tasks.
+  # If set to false then it passes only the outputs from the cells on the last
+  # layer.
+  config.should_pass_all_cell_outputs = True
+
+  # Specify the type of connection between two sub-networks. One of
+  # types.SubNettoSubNetConnType.
+  config.subnetwork_to_subnetwork_conn_type = types.SubNettoSubNetConnType.BOOL
+
+  # When set to true, it will create a unique routing connection for each input
+  # and each task for all RNN cells.
+  config.use_task_specific_routing = False
+
+  # Specify how to combine inputs to subnetworks.
+  config.input_combination_method = types.SNRInputCombinationType.CONCATENATE
+
+  return config
+
+
+def snr_config():
+  """Options for SNREncoder."""
+  config = configdict.ConfigDict()
+
+  # Set parameters for the hard sigmoid
+  config.zeta = 3.0
+  config.gamma = -1.0
+  config.beta = 1.0
+
+  # Set parameters for regularizing the SNREncoder
+  config.subnetwork_weight_l_reg_factor_weight = 0.0
+  config.subnetwork_weight_l_reg = types.RegularizationType.L2
+
+  config.subnetwork_conn_l_reg_factor_weight = 0.0001
+
+  # Whether to use skip connections in SNREncoder
+  config.use_skip_connections = True
+
+  # Whether to use activation before aggregation
+  config.activation_before_aggregation = False
+
+  # Specify the type of unit to use in SNREncoder. One of
+  # types.SNRBlockConnType
+  config.snr_block_conn_type = types.SNRBlockConnType.NONE
+
+  # Specify the type of connection between two sub-networks. One of
+  # types.SubNettoSubNetConnType.
+  config.subnetwork_to_subnetwork_conn_type = types.SubNettoSubNetConnType.BOOL
+
+  # When set to true, it will create a unique routing connection for each input
+  # and each task in all subnetworks of the encoder.
+  config.use_task_specific_routing = False
+
+  # Specify how to combine inputs to subnetworks.
+  config.input_combination_method = types.SNRInputCombinationType.CONCATENATE
 
   return config
 

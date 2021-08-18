@@ -31,11 +31,11 @@ PATIENT_MASK = "patient_mask"
 UNKNOWN_LOOKAHEAD_MASK = "unknown_lookahead_mask"
 IGNORE_MASK = "ignore_mask"
 PADDED_EVENT_MASK = "padded_event_mask"
-AROUND_ADMISSION_TRAIN_MASK = "around_admission_train_mask"
-AROUND_ADMISSION_EVAL_MASK = "around_admission_eval_mask"
+SINCE_EVENT_TRAIN_MASK = "since_event_train_mask"
+SINCE_EVENT_EVAL_MASK = "since_event_eval_mask"
 AT_DISCHARGE_MASK = label_utils.DISCHARGE_LABEL
 END_OF_ADMISSION_MASK = "end_of_admission_mask"
-AROUND_ADM_MASK_SUFFIX = "hours_after_admission"
+SINCE_EVENT_MASK_SUFFIX = "hours_since_event"
 
 TFFeatureTypes = Union[tf.FixedLenSequenceFeature, tf.FixedLenFeature]
 LabelDicts = Tuple[Dict[str, TFFeatureTypes], Dict[str, TFFeatureTypes]]
@@ -46,6 +46,7 @@ def get_labels_for_masks(
     train_mask: str,
     eval_masks: List[str],
     all_supported_masks: Dict[str, List[str]],
+    time_since_event_label_key=label_utils.TSA_LABEL,
 ) -> LabelDicts:
   """Gets label dictionary required for masks from the context and sequence.
 
@@ -53,6 +54,8 @@ def get_labels_for_masks(
     train_mask: Train masks to fetch labels for.
     eval_masks: Eval masks to fetch labels for.
     all_supported_masks: Mapping of composite masks to components for the task.
+    time_since_event_label_key: The numerical label key which measures the time
+      since the relevant event. By default this key is time since admission.
     min_aki_level: int, Only used for AKI task.
 
   Returns:
@@ -82,9 +85,9 @@ def get_labels_for_masks(
       sequence_d[
           sequence_int_feature_labels[mask]] = tf.FixedLenSequenceFeature(
               [1], tf.int64)
-    elif mask in [AROUND_ADMISSION_TRAIN_MASK, AROUND_ADMISSION_EVAL_MASK]:
-      sequence_d[label_utils.TSA_LABEL] = tf.FixedLenSequenceFeature([1],
-                                                                     tf.float32)
+    elif mask in [SINCE_EVENT_TRAIN_MASK, SINCE_EVENT_EVAL_MASK]:
+      sequence_d[time_since_event_label_key] = (
+          tf.FixedLenSequenceFeature([1], tf.float32))
     elif mask == PATIENT_MASK:
       context_d[label_utils.CENSORED_PATIENT_LABEL] = tf.FixedLenFeature(
           [], tf.int64)
@@ -139,11 +142,11 @@ def get_combined_mask(component_masks: List[tf.Tensor]) -> tf.Tensor:
   return base_mask
 
 
-def get_time_from_adm_mask(mask_name: str) -> int:
-  """Returns the hours from around adm mask."""
-  match = re.match(r".*_([\d]+)_%s.*" % AROUND_ADM_MASK_SUFFIX, mask_name)
+def get_time_since_event_mask_hours(mask_name: str) -> int:
+  """Returns the hours from time since event mask name."""
+  match = re.match(r".*_([\d]+)_%s.*" % SINCE_EVENT_MASK_SUFFIX, mask_name)
   if not match:
-    raise ValueError("Malformed around admission mask name: %s" % mask_name)
+    raise ValueError("Malformed time since event mask name: %s" % mask_name)
   return int(match.group(1))
 
 

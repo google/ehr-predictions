@@ -17,9 +17,11 @@
 """Encoder for TFReady data representation."""
 import abc
 import typing
-from typing import Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, TypeVar, Union
 
+from ehr_prediction_modeling import types
 from ehr_prediction_modeling.models import model_utils
+from ehr_prediction_modeling.models.nets import deep_encoders
 from ehr_prediction_modeling.utils import batches
 import numpy as np
 import tensorflow.compat.v1 as tf
@@ -51,13 +53,17 @@ class EncoderModule(metaclass=abc.ABCMeta):
 
   def _get_embedding_dim_dict(self) -> EmbedDimDict:
     """Get the feature-wise dimension of each embedding module."""
-    embedding_dim_dict = {}
-    for feat in self._config.identity_lookup_features:
-      embedding_dim_dict[feat] = self._config.ndim_dict[feat]
-    for feat in self._config.context_features + self._config.sequential_features:
-      if feat not in embedding_dim_dict:
-        embedding_dim_dict[feat] = self._config.ndim_emb
-    return embedding_dim_dict
+    if self._config.get("deep.encoder_type",
+                        "") == types.EmbeddingEncoderType.SNR:
+      return deep_encoders.get_snr_embedding_dim_dict(config=self._config)
+    else:
+      embedding_dim_dict = {}
+      for feat in self._config.identity_lookup_features:
+        embedding_dim_dict[feat] = self._config.ndim_dict[feat]
+      for feat in self._config.context_features + self._config.sequential_features:
+        if feat not in embedding_dim_dict:
+          embedding_dim_dict[feat] = self._config.ndim_emb
+      return embedding_dim_dict
 
   def _initialize_embeddings(self):
     """Initializes the embeddings, depending on the embedding type."""
@@ -86,9 +92,69 @@ class EncoderModule(metaclass=abc.ABCMeta):
     """
     features = self._config.context_features + self._config.sequential_features
     feature_dims = [self._embed_dim_dict[feat] for feat in features]
-    # Concatenate all features, including upscaled time (dimension = ndim_emb)
-    return sum(feature_dims) + self._config.ndim_emb
+    if self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.SUM_ALL):
+      # Sum all features
+      assert model_utils.all_elements_equal(feature_dims), (
+          "All embedding dimensions must be equal to combine with sum")
+      return feature_dims[0]
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.CONCATENATE):
+      # Concatenate all features, including upscaled time (dimension = ndim_emb)
+      return sum(feature_dims) + self._config.ndim_emb
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.SUM_BY_SUFFIX):
+      # Sum features with the same suffix, concatenate identity lookup features.
+      feature_suffixes = [get_feature_suffix(feat) for feat in features]
+      total_emb_size = 0
+      for suffix in set(feature_suffixes):
+        features_to_sum = []
+        for feat in features:
+          feat_suffix = get_feature_suffix(feat)
+          if feat not in self._config.identity_lookup_features and (feat_suffix
+                                                                    == suffix):
+            features_to_sum.append(self._embed_dim_dict[feat])
+        assert model_utils.all_elements_equal(features_to_sum), (
+            "All embedding dimensions must be equal to combine with sum")
+        total_emb_size += features_to_sum[0]
+      for feat in self._config.identity_lookup_features:
+        total_emb_size += self._embed_dim_dict[feat]
+      return total_emb_size
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.COMBINE_SNR_OUT):
+      return _flatten_list(feature_dims) + [self._config.ndim_emb]
+    else:
+      raise ValueError("Expected embedding combination method in "
+                       "types.EmbeddingCombinationMethod. Got %s" %
+                       self._config.embedding_combination_method)
 
+  def get_embedding_loss(
+      self,
+      batch: batches.TFBatch,
+      reuse_embeddings: Optional[bool] = True
+  ) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    """Returns the embedding losses.
+
+    Args:
+      batch: A batch of data.
+      reuse_embeddings: Whether to reuse precomputed embeddings
+
+    Returns:
+      A tuple containing:
+        - The total embedding loss (summed across feature types)
+        - A dict mapping feature types to embedding losses
+    """
+    if self.embedding.has_embedding_loss:
+      data = batches.batch_to_components(batch, self._config.context_features,
+                                         self._config.sequential_features)
+      flat_data = nest.map_structure(batches.flatten_batch, data)
+      flat_data = nest.map_structure(batches.sparse_fill_empty_rows, flat_data)
+      embedding_loss, embedding_losses_map = self.embedding.get_embedding_loss(
+          batch, flat_data, reuse_embeddings)
+      return (
+          embedding_loss * self._config.embedding_loss_weight,
+          embedding_losses_map)
+    return tf.constant(0, dtype=tf.float32), {}
 
   def embed_batch(self, batch: batches.TFBatch) -> tf.Tensor:
     """Embeds input batch and creates inputs to temporal model."""
@@ -150,9 +216,6 @@ class EncoderModule(metaclass=abc.ABCMeta):
     encoder_regularization = self._config.encoder_regularization
     encoder_regularization_weight = self._config.encoder_regularization_weight
 
-    if self._config.get("embedding_regularize_only_sparse_lookup"):
-      encoder_regularization_weight = 0.
-
     embedding_weights = [
         w for w in tf.trainable_variables() if (
             self._config.embedding_type.lower() in w.name.lower())]
@@ -175,6 +238,13 @@ class EncoderModule(metaclass=abc.ABCMeta):
       sparse_lookup_reg_penalty = slim.apply_regularization(
           sparse_encoding_regularizer, sparse_encoder_lookup_weights)
 
+    if (self._config.embedding_type == types.EmbeddingType.DEEP_EMBEDDING and
+        self._config.deep.encoder_type == types.EmbeddingEncoderType.SNR):
+      encoders = self.embedding.get_encoders().values()
+      encoders_regularization_penalty = sum(
+          [encoder.get_regularization_penalty() for encoder in encoders])
+      return sparse_lookup_reg_penalty + encoders_regularization_penalty
+
     if not encoder_regularizer or not encoder_weights:
       encoder_reg_penalty = tf.constant(0.)
     else:
@@ -187,20 +257,82 @@ class EncoderModule(metaclass=abc.ABCMeta):
     return embedding_regularization_penalty
 
   def _combine_embeddings_for_input(
-      self,
-      embedding_dict: Dict[str, int]
-      ) -> tf.Tensor:
+      self, embedding_dict: Dict[str, int]) -> tf.Tensor:
     """Combines embeddings into one input for the model.
 
-    The embeddings will be concatenated.
+    The embeddings can be combined in different ways and this function
+    encapsulates that logic and returns an input vector based on the combination
+    method that is specified.
 
     Args:
       embedding_dict: dict of string feature name to embedding.
+
     Returns:
       The combined embeddings to be provided as an input for a particular step
       of the model.
     """
-    return tf.concat(list(embedding_dict.values()), axis=-1)
+    if self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.SUM_ALL):
+      return sum(embedding_dict.values())
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.CONCATENATE):
+      return tf.concat(list(embedding_dict.values()), axis=-1)
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.SUM_BY_SUFFIX):
+      feature_suffixes = [
+          get_feature_suffix(feat) for feat in embedding_dict.keys()
+      ]
+      combined_embedding = None
+      for suffix in feature_suffixes:
+        embeddings_to_sum = []
+        for feat, emb in embedding_dict.items():
+          feat_suffix = get_feature_suffix(feat)
+          if feat not in self._config.identity_lookup_features and (feat_suffix
+                                                                    == suffix):
+            embeddings_to_sum.append(emb)
+        if combined_embedding is None:
+          combined_embedding = [sum(embeddings_to_sum)]
+        else:
+          combined_embedding += [sum(embeddings_to_sum)]
+      combined_embedding += [
+          embedding_dict[feat] for feat in self._config.identity_lookup_features
+      ]
+      return tf.concat(combined_embedding, axis=1)
+    elif self._config.embedding_combination_method == (
+        types.EmbeddingCombinationMethod.COMBINE_SNR_OUT):
+      return deep_encoders.compute_combined_snr_embedding(
+          embedding_dict=embedding_dict)
+    else:
+      raise ValueError("Embedding combination method "
+                       f"{self._config.embedding_combination_method} "
+                       "not recognized.")
+
+
+def get_feature_suffix(feature_name: str) -> str:
+  """Gets the suffix of a feature from its name."""
+  if "_" not in feature_name:
+    return ""
+  return feature_name.split("_")[-1]
+
+
+def _flatten_list(input_list: Any) -> List[int]:
+  """Flatten the input list of lists into a list.
+
+  Args:
+    input_list: A list that can contain integers or arbitrarily nested lists of
+      lists of integers.
+
+  Returns:
+    The flattened list.
+      e.g. for [1, [2, 3], [[4]]] it would return [1, 2, 3, 4].
+  """
+  flattened_list = []
+  for element in input_list:
+    if isinstance(element, list):
+      flattened_list += _flatten_list(element)
+    else:
+      flattened_list.append(element)
+  return flattened_list
 
 
 # Type for any subclass of EncoderModule.

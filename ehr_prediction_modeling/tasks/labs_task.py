@@ -170,10 +170,12 @@ class LabsRegression(base_task.Task):
       loss_type: str = types.TaskLossType.L2,
       loss_weight: float = 5.0,
       accumulate_logits: bool = False,
+      task_layer_type: str = types.TaskLayerTypes.MLP,
       task_layer_sizes: Optional[List[int]] = None,
       regularization_type: str = types.RegularizationType.NONE,
       regularization_weight: float = 0.,
       name: str = types.TaskNames.LAB_REGRESSION,
+      snr_config: Optional[configdict.ConfigDict] = None,
   ) -> configdict.ConfigDict:
     """Generates a config object for LabsRegression.
 
@@ -190,6 +192,7 @@ class LabsRegression(base_task.Task):
       accumulate_logits: bool, whether to create a CDF over logits for each lab
         task to encourage monotonicity for increasing time windows. Should only
         be imposed if we are predicting the maximum lab value.
+      task_layer_type: one of types.TaskLayerTypes - the type of layer to use.
       task_layer_sizes: array of int, the size of the task-specific layers to
         pass the model output through before a final logistic layer. If None,
         there is just the final logistic layer.
@@ -198,6 +201,8 @@ class LabsRegression(base_task.Task):
       regularization_weight: float, the weight of the regularization penalty to
         apply to logistic layers associated with this task.
       name: str, name of this task for visualization and debuggigng.
+      snr_config: configdict.ConfigDict, containing task layer sub-network
+        routing parameters.
 
     Returns:
       A ConfigDict to be used to instantiate a LabsRegression task.
@@ -208,7 +213,7 @@ class LabsRegression(base_task.Task):
                            ("44", "Lab 3"), ("45", "Lab 4"),
                            ("46", "Lab 5")]
     config.aggregations = aggregations
-    config.hours_after_admission = []  # unused, here for consistency
+    config.time_since_event_hours_list = []  # unused, here for consistency
     config.window_times = sorted(window_times)
     config.train_mask = train_mask
     config.eval_masks = eval_masks or []

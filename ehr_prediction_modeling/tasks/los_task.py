@@ -54,8 +54,8 @@ class LengthOfStay(base_task.Task):
     return {
         **super()._supported_train_masks,
         **{
-            task_masks.Train.AROUND_ADM:
-                self.default_masks + [mask_utils.AROUND_ADMISSION_TRAIN_MASK],
+            task_masks.Train.SINCE_EVENT:
+                self.default_masks + [mask_utils.SINCE_EVENT_TRAIN_MASK],
         }
     }
 
@@ -65,8 +65,8 @@ class LengthOfStay(base_task.Task):
     return {
         task_masks.Eval.BASE:
             self.default_masks,
-        task_masks.Eval.AROUND_ADM:
-            self.default_masks + [mask_utils.AROUND_ADMISSION_EVAL_MASK],
+        task_masks.Eval.SINCE_EVENT:
+            self.default_masks + [mask_utils.SINCE_EVENT_EVAL_MASK],
     }
 
   def __init__(self, config: configdict.ConfigDict):
@@ -115,7 +115,7 @@ class LengthOfStay(base_task.Task):
     """
     context_d, sequence_d = mask_utils.get_labels_for_masks(
         self._config.train_mask, self._config.eval_masks,
-        self._all_supported_masks)
+        self._all_supported_masks, self._config.time_since_event_label_key)
 
     sequence_d[label_utils.LOS_LABEL] = tf.FixedLenSequenceFeature(
         [1], tf.float32)
@@ -203,15 +203,18 @@ class LengthOfStay(base_task.Task):
       eval_masks: List[str],
       train_mask: str,
       loss_type: str,
+      time_buckets_per_day: int = 4,
       loss_weight: float = 1.0,
       binarize_days: Optional[List[int]] = None,
       accumulate_logits: bool = True,
-      hours_after_admission: Optional[List[int]] = None,
+      time_since_event_hours_list: Optional[List[int]] = None,
       scale_pos_weight: Optional[float] = 1.,
+      task_layer_type: str = types.TaskLayerTypes.MLP,
       task_layer_sizes: Optional[List[int]] = None,
       regularization_type: str = types.RegularizationType.NONE,
       regularization_weight: float = 0.,
       name: str = "LengthOfStay",
+      snr_config: Optional[configdict.ConfigDict] = None,
   ):
     """Generates a config object for LengthOfStay.
 
@@ -221,22 +224,25 @@ class LengthOfStay(base_task.Task):
       train_mask: str, name of the mask used for training. One of
         LengthOfStay._supported_train_masks.
       loss_type: str, type of loss to be used.
+      time_buckets_per_day: Number of time buckets within a day. It is only
+        needed for time since event masks.
       loss_weight: float, weight of this task loss.
       binarize_days: list of int, time periods for which to predict
         length_of_stay <= time window. Optional; if None, this is a regression
         task to predict the exact length of stay.
       accumulate_logits: bool, whether to create a CDF over the logits of
         increasing time_windows to encourage monotonicity.
-      hours_after_admission: If the around admission mask is present in either
+      time_since_event_hours_list: If time since event mask is present in either
         train or eval, this is a list specifying the number of hours after
-        admission at which the model predicts LOS e.g. [0, 12] would predict LOS
-        at admission and 12 hours after admission. If masking during training,
+        event at which the model predicts LOS e.g. [0, 12] would predict LOS
+        at event and 12 hours after event. If masking during training,
         these are combined i.e. the loss is comprised of the prediction at
-        admission and the prediction 12 hours after admission. If masking during
+        event and the prediction 12 hours after event. If masking during
         eval, these are returned as separate masks to get metrics for predicting
-        length of stay at admission, and separately for predicting length of
-        stay at 12 hours after admission.
+        length of stay at event, and separately for predicting length of
+        stay at 12 hours after event.
       scale_pos_weight: float, weight of positive samples in the loss.
+      task_layer_type: one of types.TaskLayerTypes - the type of layer to use.
       task_layer_sizes: array of int, the size of the task-specific layers to
         pass the model output through before a final logistic layer. If None,
         there is just the final logistic layer.
@@ -245,6 +251,8 @@ class LengthOfStay(base_task.Task):
       regularization_weight: float, the weight of the regularization penalty to
         apply to logistic layers associated with this task.
       name: str, name of this task for visualization and debugging.
+      snr_config: configdict.ConfigDict, containing task layer sub-network
+        routing parameters.
 
     Returns:
       A ConfigDict to be used to instantiate a LOS task.
@@ -263,7 +271,10 @@ class LengthOfStay(base_task.Task):
     ]:
       raise ValueError("Regression LengthOfStay task specified but CE/Brier "
                        "loss specified.")
-    config.hours_after_admission = hours_after_admission or []
+    config.time_since_event_hours_list = time_since_event_hours_list or []
+    # Since event label key used is time since admission.
+    config.time_since_event_label_key = label_utils.TSA_LABEL
+    config.time_buckets_per_day = time_buckets_per_day
     config.loss_type = loss_type
     config.eval_masks = eval_masks
     config.train_mask = train_mask

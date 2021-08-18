@@ -94,3 +94,39 @@ def scale_pos_fn(targets: tf.Tensor,
   return tf.cast(loss_mask, dtype=tf.float32) * reweighted_targets
 
 
+def compute_uncertainty_multi_task_loss(task_loss: tf.Tensor,
+                                        eval_loss: tf.Tensor,
+                                        task_type: str,
+                                        init_sigma_sq_min: float,
+                                        init_sigma_sq_max: float,
+                                        max_loss_weight: float):
+  """Computes uncertainty based multi class loss.
+
+  Args:
+    task_loss: Loss associated with a particular task.
+    eval_loss: Loss associated with a particular task during evaluation.
+    task_type: Name of task.
+    init_sigma_sq_min: Minimum init value for sigma_sq.
+    init_sigma_sq_max: Maximum init value for sigma_sq.
+    max_loss_weight: Maximum value of loss weight.
+  Returns:
+    Uncertainty weighted task, eval loss and factor (loss weight).
+
+  Uses the method described in the paper (https://arxiv.org/abs/1705.07115).
+  The only parameter is sigma which is optimized during training.
+  """
+  with tf.variable_scope("sigma_" + task_type, reuse=tf.AUTO_REUSE):
+    sigma = tf.get_variable("sigma_" + task_type, shape=[],
+                            initializer=tf.initializers.random_uniform(
+                                minval=init_sigma_sq_min,
+                                maxval=init_sigma_sq_max))
+    factor = tf.div(1.0, tf.math.square(sigma))
+    factor = tf.clip_by_value(factor, clip_value_min=0.0,
+                              clip_value_max=max_loss_weight)
+    weighted_task_loss = tf.add(
+        tf.multiply(factor, task_loss), tf.log(sigma))
+    weighted_eval_loss = tf.add(
+        tf.multiply(factor, eval_loss), tf.log(sigma))
+    return weighted_task_loss, weighted_eval_loss, factor
+  
+

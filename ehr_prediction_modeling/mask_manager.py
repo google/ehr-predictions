@@ -47,7 +47,14 @@ class MaskManager:
     if self._task_type == types.TaskTypes.READMISSION:
       self._discard_final_admission = task_config.discard_final_admission
 
-    self._hours_after_admission = task_config.get("hours_after_admission", [])
+    # List of hours since event to use for train mask.
+    self._time_since_event_hours_list = task_config.get(
+        "time_since_event_hours_list", [])
+    # Label key for numerical time since event value. Default is time since
+    # admission key.
+    self._time_since_event_label_key = task_config.get(
+        "time_since_event_label_key", label_utils.TSA_LABEL)
+    self._time_buckets_per_day = task_config.get("time_buckets_per_day", None)
     self._window_hours = window_hours
     self._label_keys = label_keys
     self._supported_train_masks = supported_train_masks
@@ -89,10 +96,11 @@ class MaskManager:
           f"{self._all_supported_masks[composite_mask_name]}")
 
     mask_name_to_fn = {
-        mask_utils.AROUND_ADMISSION_TRAIN_MASK:
-            self._adm_train_mask,
-        mask_utils.AROUND_ADMISSION_EVAL_MASK:
-            functools.partial(self._adm_eval_mask, composite_mask_name),
+        mask_utils.SINCE_EVENT_TRAIN_MASK:
+            self._time_since_event_train_mask,
+        mask_utils.SINCE_EVENT_EVAL_MASK:
+            functools.partial(
+                self._time_since_event_eval_mask, composite_mask_name),
         mask_utils.AT_DISCHARGE_MASK:
             self._at_discharge_mask,
         mask_utils.INTERVAL_MASK:
@@ -145,10 +153,11 @@ class MaskManager:
                                             batch: batches.TFBatch) -> None:
     """Returns a composite mask.
 
-    The AROUND_ADMISSION_MASK has a different behavior depending on model
+    The SINCE_EVENT_MASK has a different behavior depending on model
     mode. During training, its different components (one per
-    `hours_after_admission`) are summed. During eval, they are kept separate
-    so that it is possible to evaluate at each chosen time after admission.
+    `_time_since_event_hours_list`) are summed. During eval, they are kept
+    separate so that it is possible to evaluate at each chosen time after
+    event.
 
     Args:
       composite_mask_name: str. Name of the mask.
@@ -170,58 +179,92 @@ class MaskManager:
               batch=batch))
     return mask_utils.get_combined_mask(computed_masks)
 
-  def _adm_eval_mask(self, composite_mask_name: str,
-                     batch: batches.TFBatch) -> tf.Tensor:
-    """Returns mask generated for around admission eval.
+  def _time_since_event_eval_mask(
+      self, composite_mask_name: str, batch: batches.TFBatch
+      ) -> tf.Tensor:
+    """Returns mask generated for time since event eval.
 
     Args:
-      composite_mask_name: Name of the composite mask this around admission
-        component mask is being generated for. Used to parse the hours after
-        admission that should be set for the mask.
+      composite_mask_name: Name of the composite mask this mask is being
+        generated for. Used to parse the hours after event that should be
+        set for the mask.
       batch: Batch of the data to create a mask for.
 
     Returns:
       A single mask with a positive value for any event at hours
-      after admission parsed from the composite mask name.
+      since event parsed from the composite mask name.
     """
-    hours = mask_utils.get_time_from_adm_mask(composite_mask_name)
-    return self._around_admission_mask(batch, hours)
+    hours = mask_utils.get_time_since_event_mask_hours(composite_mask_name)
+    return self._time_since_event_mask(batch, target_hours=hours)
 
-  def _adm_train_mask(self, batch: batches.TFBatch) -> tf.Tensor:
-    """Returns mask generated for around admission training.
+  def _time_since_event_train_mask(
+      self, batch: batches.TFBatch) -> tf.Tensor:
+    """Returns mask generated for specific times since some event of interest.
 
     Mask generated will have a positive value for any hour in
-    self._hours_after_admission that is also positive in the base_mask.
+    self._time_since_event_hours_list that is also positive in the base_mask.
 
     Args:
       batch: Batch of the data to create a mask for.
 
     Returns:
       A single mask with a positive value for any event at hours
-      after admission for every hour in hours_list.
+      after some event for every hour in self._time_since_event_hours_list.
     """
-    if not self._hours_after_admission:
-      raise ValueError("Around admission masks require a non-empty list of "
-                       "times that indicate how many hours after the admission"
+    if not self._time_since_event_hours_list:
+      raise ValueError("Time since masks require a non-empty list of "
+                       "times that indicate how many hours after the event"
                        " the mask will be nonzero.")
-    time_mask = self._around_admission_mask(batch,
-                                            self._hours_after_admission[0])
-    for time in self._hours_after_admission[1:]:
-      time_mask += self._around_admission_mask(batch, time)
+    time_mask = self._time_since_event_mask(
+        batch=batch, target_hours=self._time_since_event_hours_list[0])
+    for hours in self._time_since_event_hours_list[1:]:
+      time_mask += self._time_since_event_mask(batch, hours)
     return time_mask
 
-  def _around_admission_mask(self, batch: batches.TFBatch,
-                             hours_after_admission: int) -> tf.Tensor:
-    """Mask that is 1 for events exactly hours_after_admission since admission."""
-    time_after_admission = self._extract_mask_from_sequence(
-        batch, label_utils.TSA_LABEL)
-    float_day = hours_after_admission / 24.
-    return tf.cast(
-        tf.equal(
-            time_after_admission,
-            tf.constant(
-                float_day, dtype=tf.float32)),
+  def _time_since_event_mask(
+      self, batch: batches.TFBatch,
+      target_hours: int) -> tf.Tensor:
+    """Mask that is 1 for events at hours since some event of interest.
+
+    To accommodate shifting between time since event timestamps and the
+    target hours, we take the difference as (time since event - target time)
+    and select only those timesteps which have a difference >=0 (happen at
+    or after the target) and < bucket length (closest time after target).
+
+    Args:
+      batch: Batch of the data to create a mask for.
+      target_hours: target number of hours since event to set mask to 1.
+
+    Returns:
+      A single mask with a positive value for any event at target hours
+      after some event.
+    """
+    if not self._time_buckets_per_day:
+      raise ValueError(
+          "Must specify time_buckets_per_day in the task config if using a "
+          "time since event mask.")
+    time_since_event = self._extract_mask_from_sequence(
+        batch, self._time_since_event_label_key)
+    target_sortable_time = tf.constant(
+        target_hours / 24., dtype=tf.float32)
+    diff_since_target = time_since_event - target_sortable_time
+    after_target_time = tf.cast(
+        tf.greater_equal(
+            diff_since_target, tf.constant(
+                0., dtype=tf.float32)),
         tf.float32)
+    # We subtract 1e-6 from the upper bound to account for the case in which
+    # there is a trigger time exactly one bucket away from the target time. Due
+    # to precision issues when the length of a bucket has many decimal places,
+    # this timestamp can be slightly smaller than the exact length of the
+    # bucket, resulting in 2 eligible trigger times instead of 1.
+    less_than_one_bucket_from_target_time = tf.cast(
+        tf.less(
+            diff_since_target, tf.constant(
+                (1. / self._time_buckets_per_day) - 1e-6,
+                dtype=tf.float32)),
+        tf.float32)
+    return after_target_time * less_than_one_bucket_from_target_time
 
   def _at_discharge_mask(self,
                          batch: batches.TFBatch) -> tf.Tensor:

@@ -20,13 +20,13 @@ import copy
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 from ehr_prediction_modeling import mask_manager
+from ehr_prediction_modeling.tasks import mlp_task_layer
 from ehr_prediction_modeling.tasks import task_data
+from ehr_prediction_modeling.tasks import task_layers
 from ehr_prediction_modeling.tasks import task_masks
 from ehr_prediction_modeling.utils import batches
 from ehr_prediction_modeling.utils import mask_utils
 import tensorflow.compat.v1 as tf
-
-from ehr_prediction_modeling.tasks import mlp_task_layer
 from ehr_prediction_modeling import configdict
 
 
@@ -40,7 +40,7 @@ class Task(metaclass=abc.ABCMeta):
     self._config.eval_masks = self._update_eval_mask_names_list(
         self._config.eval_masks)
     self._label_keys = label_keys if label_keys else []
-    self._task_layer = mlp_task_layer.MLPLayer(config, self.num_targets)
+    self._task_layer = task_layers.get_task_layer(config, self.num_targets)
     self._init_mask_manager()
 
   def _init_mask_manager(self):
@@ -75,7 +75,7 @@ class Task(metaclass=abc.ABCMeta):
     """
 
   def _update_eval_mask_names_list(self, eval_masks: List[str]) -> List[str]:
-    """Updates eval mask names to have type included and expand hours after adm.
+    """Updates eval mask names to include type and expand hours since event.
 
     Args:
       eval_masks: Eval masks to update the names of.
@@ -91,32 +91,32 @@ class Task(metaclass=abc.ABCMeta):
     return list(updated_eval_masks)
 
   def _update_eval_mask_names(self, eval_masks: Dict[str, Optional[List[str]]]):
-    """Updates eval mask names to have type included and expand hours after adm.
+    """Updates eval mask names to include type and expand hours since event.
 
     Args:
       eval_masks: Eval masks to update the names of.
 
     Returns:
       A dict of eval masks with the keys updated. Keys will have task_type added
-      and any mask with around_adm_eval in the name will be expanded based on
-      hours_after_admission. For example, if around_adm_eval mask is a key in
-      eval_masks and config.hours_after_admission = [24, 48]. The resulting dict
-      will have one entry for 24 hours after admission and one entry for 48
-      hours after admission, but no entry for the bare around_adm_eval mask. If
-      config.hours_after_admission is empty, any around_adm_eval mask will be
-      removed.
+      and any mask with 'since_event_eval' in the name will be expanded based on
+      time_since_event_hours_list. For example, if since_event_eval mask is a
+      key in eval_masks and config.time_since_event_hours_list = [24, 48]. The
+      resulting dict will have one entry for 24 hours after event and one
+      entry for 48 hours after event, but no entry for the bare
+      since_event_eval mask. If config.time_since_event_hours_list is empty, any
+      since_event_eval mask will be removed.
     """
-    around_adm_masks = [
+    since_event_masks = [
         mask_name for mask_name in eval_masks.keys()
-        if task_masks.Eval.AROUND_ADM in mask_name
+        if task_masks.Eval.SINCE_EVENT in mask_name
     ]
-    for adm_mask in around_adm_masks:
-      for time in self._config.get("hours_after_admission", []):
-        new_mask_name = adm_mask.replace(
-            task_masks.Eval.AROUND_ADM,
-            f"{time}_{mask_utils.AROUND_ADM_MASK_SUFFIX}")
-        eval_masks[new_mask_name] = eval_masks[adm_mask]
-      del eval_masks[adm_mask]
+    for mask_name in since_event_masks:
+      for hours in self._config.get("time_since_event_hours_list", []):
+        new_mask_name = mask_name.replace(
+            task_masks.Eval.SINCE_EVENT,
+            f"{hours}_{mask_utils.SINCE_EVENT_MASK_SUFFIX}")
+        eval_masks[new_mask_name] = eval_masks[mask_name]
+      del eval_masks[mask_name]
 
     return {
         mask_utils.get_unique_mask_name(self.task_type, mask_name): components
@@ -127,7 +127,7 @@ class Task(metaclass=abc.ABCMeta):
   def _supported_eval_masks(self) -> Dict[str, List[str]]:
     """Returns mapping of all supported eval masks with task_type prepended.
 
-    Expands around_adm_eval masks to have one entry per hours_after_admission.
+    Expands since event masks to have one entry per time_since_event_hours_list.
 
      Returns:
       Map the names of masks (with task_type prepended) available during
@@ -144,7 +144,7 @@ class Task(metaclass=abc.ABCMeta):
 
 
   @property
-  def layer(self) -> mlp_task_layer.MLPLayer:
+  def layer(self) -> task_layers.TaskLayers:
     return self._task_layer
 
   @property

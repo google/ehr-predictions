@@ -36,6 +36,7 @@ class EmbeddingEncoderType(object):
   """Available encoders for DeepEmbedding."""
   RESIDUAL = "residual"
   FC = "fc"
+  SNR = "snr"
 
 
 class ActivationFunction(object):
@@ -131,4 +132,58 @@ class LearningRateScheduling(object):
   FIXED = "fixed"
   EXPONENTIAL_DECAY = "exponential_decay"
 
+
+class EmbeddingCombinationMethod(object):
+  """Available embedding combination methods."""
+  CONCATENATE = "concatenate"
+  SUM_ALL = "sum_all"
+  SUM_BY_SUFFIX = "sum_by_suffix"
+  COMBINE_SNR_OUT = "combine_snr_out"
+
+
+class SNRBlockConnType(object):
+  """Available unit types for SNREncoder."""
+  FC = "fc"
+  HIGHWAY = "highway"
+  RESIDUAL = "residual"
+  NONE = "None"
+
+
+class SubNettoSubNetConnType(object):
+  """Available connection types between subnetworks."""
+  BOOL = "bool"
+  SCALAR_WEIGHT = "scalar_weight"
+
+
+class SNRInputCombinationType(object):
+  """Available combination methods for subnetwork input."""
+  CONCATENATE = "concatenate"
+  SUM_ALL = "sum"
+
+
+class LossCombinationType(object):
+  SUM_ALL = "SUM_ALL"
+  UNCERTAINTY_WEIGHTED = "UNCERTAINTY_WEIGHTED"
+
+
+class ModelTypes(object):
+  RNN = "RNN"
+  SNRNN = "SNRNN"
+
+
+class TaskLayerTypes(object):
+  NONE = "none"
+  MLP = "MLP"
+  SNRMLP = "SNRMLP"
+
+
+class ModelMode(object):
+  """Available modes for the model."""
+  TRAIN = "train"
+  EVAL = "eval"
+  PREDICT = "predict"
+
+  @classmethod
+  def is_train(cls, mode: str) -> bool:
+    return mode == ModelMode.TRAIN
 

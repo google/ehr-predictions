@@ -174,10 +174,12 @@ class ReadmissionRisk(base_task.Task):
       loss_weight: float = 1.0,
       discard_final_admission: bool = False,
       scale_pos_weight: float = 1.0,
+      task_layer_type: str = types.TaskLayerTypes.MLP,
       task_layer_sizes: Optional[List[int]] = None,
       regularization_type: str = types.RegularizationType.NONE,
       regularization_weight: float = 0.,
       name: str = types.TaskNames.READMISSION,
+      snr_config: Optional[configdict.ConfigDict] = None,
   ) -> configdict.ConfigDict:
     """Generates a config object for ReadmissionRisk.
 
@@ -194,6 +196,7 @@ class ReadmissionRisk(base_task.Task):
       discard_final_admission: bool. Whether to mask out labels 2 (i.e. the
         final event of an admission that is also the last episode).
       scale_pos_weight: float, weight of positive samples in the loss.
+      task_layer_type: one of types.TaskLayerTypes - the type of layer to use.
       task_layer_sizes: array of int, the size of the task-specific layers to
         pass the model output through before a final logistic layer. If None,
         there is just the final logistic layer.
@@ -202,6 +205,8 @@ class ReadmissionRisk(base_task.Task):
       regularization_weight: float, the weight of the regularization penalty to
         apply to logistic layers associated with this task.
       name: str, name of this task for visualization and debugging.
+      snr_config: configdict.ConfigDict, containing task layer sub-network
+        routing parameters.
 
     Returns:
       A ConfigDict to be used to instantiate a Readmission task.
@@ -219,7 +224,7 @@ class ReadmissionRisk(base_task.Task):
     config.task_layer_sizes = task_layer_sizes or []
     config.regularization_type = regularization_type
     config.regularization_weight = regularization_weight
-    config.hours_after_admission = []  # unused, here for consistency
+    config.time_since_event_hours_list = []  # unused, here for consistency
     return config
 
   @classmethod
